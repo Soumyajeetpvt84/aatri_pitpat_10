@@ -45,7 +45,7 @@ export const useGestures = (
 
   // Shake
   useEffect(() => {
-    if (!onShake) return;
+    if (!onShake || typeof Shake === 'undefined') return;
 
     const shakeEvent = new Shake({ threshold: 15, timeout: 1000 });
     shakeEvent.start();

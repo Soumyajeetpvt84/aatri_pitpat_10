@@ -6,83 +6,215 @@ import { Upload, X, Trash2 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { seedMemories } from '../data/seed';
 
+// --- IndexedDB Service Logic for persistent storage ---
+// This replaces localStorage to handle larger image files and provide robust storage.
+
+const DB_NAME = 'PitPatDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'memories';
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+const openDB = (): Promise<IDBDatabase> => {
+  if (dbPromise) {
+    return dbPromise;
+  }
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => {
+      console.error('IndexedDB error:', request.error);
+      reject('Error opening database');
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onupgradeneeded = (event) => {
+      const dbInstance = (event.target as IDBOpenDBRequest).result;
+      if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
+        dbInstance.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+  return dbPromise;
+};
+
+const getAllMemoriesDB = async (): Promise<Memory[]> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.getAll();
+
+    request.onerror = () => reject('Error fetching memories');
+    request.onsuccess = () => {
+      const memories = request.result.sort((a, b) => new Date(b.id).getTime() - new Date(a.id).getTime());
+      resolve(memories);
+    };
+  });
+};
+
+const addMemoryDB = async (memory: Memory): Promise<void> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.add(memory);
+
+    request.onerror = () => reject('Error adding memory');
+    request.onsuccess = () => resolve();
+  });
+};
+
+const deleteMemoryDB = async (id: string): Promise<void> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(id);
+
+    request.onerror = () => reject('Error deleting memory');
+    request.onsuccess = () => resolve();
+  });
+};
+
+// One-time migration from localStorage and/or seeding the DB
+const migrateAndSeedDB = async () => {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const countRequest = store.count();
+
+    return new Promise<void>((resolve) => {
+        countRequest.onsuccess = () => {
+            if (countRequest.result > 0) {
+                // DB already has data, no migration or seeding needed.
+                return resolve();
+            }
+
+            const storedMemories = localStorage.getItem('pitpatMemories');
+            if (storedMemories) {
+                console.log("Migrating memories from localStorage to IndexedDB...");
+                try {
+                    const memories: Memory[] = JSON.parse(storedMemories);
+                    memories.forEach(memory => store.add(memory));
+                    
+                    transaction.oncomplete = () => {
+                        console.log("Migration complete. Clearing localStorage.");
+                        localStorage.removeItem('pitpatMemories');
+                        resolve();
+                    };
+                    transaction.onerror = (e) => {
+                        console.error("Migration failed:", e);
+                        resolve();
+                    }
+                } catch (error) {
+                    console.error("Error parsing localStorage memories during migration.", error);
+                    localStorage.removeItem('pitpatMemories'); // Clear corrupted data
+                    // Proceed to seeding
+                    seedMemories.forEach(memory => store.add(memory));
+                    resolve();
+                }
+            } else {
+                // No localStorage data, so seed initial data.
+                console.log("No memories found, seeding initial data to IndexedDB.");
+                seedMemories.forEach(memory => store.add(memory));
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => resolve();
+            }
+        };
+        countRequest.onerror = () => {
+            console.error("Could not count items in DB for migration/seeding.");
+            resolve();
+        };
+    });
+};
+
+
 const MemoriesPage: React.FC = () => {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [memoryToDelete, setMemoryToDelete] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedMemories = localStorage.getItem('pitpatMemories');
-    if (storedMemories) {
-      try {
-        setMemories(JSON.parse(storedMemories));
-      } catch (error) {
-        console.error("Error parsing memories from localStorage, falling back to seed data.", error);
-        localStorage.removeItem('pitpatMemories');
-        setMemories(seedMemories);
-      }
-    } else {
-      // If no memories in storage, initialize with seed data for a better first-time experience
-      setMemories(seedMemories);
-    }
-    setIsInitialized(true);
+    const loadMemories = async () => {
+      setIsLoading(true);
+      await migrateAndSeedDB();
+      const memoriesFromDB = await getAllMemoriesDB();
+      setMemories(memoriesFromDB);
+      setIsLoading(false);
+    };
+    loadMemories();
   }, []);
-
-  useEffect(() => {
-    if (!isInitialized) return;
-    
-    if (memories.length > 0) {
-        localStorage.setItem('pitpatMemories', JSON.stringify(memories));
-    } else {
-        localStorage.removeItem('pitpatMemories');
-    }
-  }, [memories, isInitialized]);
   
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setIsLoading(true);
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+
+    reader.onerror = () => {
+      console.error('FileReader error:', reader.error);
+      setIsLoading(false);
+      // You could add a user-facing error message here
+    };
+
     reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(',')[1];
       try {
+        const dataUrl = reader.result as string;
+
+        if (!dataUrl || typeof dataUrl !== 'string') {
+          throw new Error('Could not read file data.');
+        }
+
+        const parts = dataUrl.split(',');
+        if (parts.length < 2 || !parts[1]) {
+          throw new Error('Invalid data URL format.');
+        }
+        const base64 = parts[1];
+
         const { caption, mood } = await generateCaptionForImage(base64);
         const newMemory: Memory = {
           id: new Date().toISOString(),
-          imageUrl: dataUrl, // Persist the full data URL
+          imageUrl: dataUrl,
           imageB64: base64,
           caption,
           mood,
           date: new Date().toLocaleDateString(),
         };
+
+        await addMemoryDB(newMemory);
         setMemories(prev => [newMemory, ...prev]);
-        if (navigator.vibrate) navigator.vibrate([50, 50, 50]); // Success haptic
+
+        if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       } catch (error) {
-        console.error("Failed to process image:", error);
+        console.error('Failed to process image:', error);
+        // You could add a user-facing error message here
       } finally {
         setIsLoading(false);
       }
     };
+    reader.readAsDataURL(file);
   };
 
-  const handleDeleteMemory = (id: string) => {
+  const handleDeleteMemory = async (id: string) => {
+    await deleteMemoryDB(id);
     setMemories(prev => prev.filter(m => m.id !== id));
     setSelectedMemory(null);
   };
 
-  const confirmDeleteMemory = (id: string) => {
+  const confirmDeleteMemory = async (id: string) => {
     if (navigator.vibrate) navigator.vibrate(200); // Stronger haptic for deletion
     setDeletingId(id);
     setMemoryToDelete(null); // Close confirmation modal
-    setTimeout(() => {
-      handleDeleteMemory(id);
+    setTimeout(async () => {
+      await handleDeleteMemory(id);
       setDeletingId(null); // Reset animation state
     }, 400); // Must match animation duration
   }
@@ -97,8 +229,15 @@ const MemoriesPage: React.FC = () => {
 
   useEffect(() => {
     const handleShake = () => showRandomMemory();
-    window.addEventListener('shake', handleShake, false);
-    return () => window.removeEventListener('shake', handleShake, false);
+     if (typeof (window as any).Shake !== 'undefined') {
+        const shakeEvent = new (window as any).Shake({ threshold: 15, timeout: 1000 });
+        shakeEvent.start();
+        window.addEventListener('shake', handleShake, false);
+        return () => {
+            window.removeEventListener('shake', handleShake, false);
+            shakeEvent.stop();
+        };
+    }
   }, [showRandomMemory]);
 
   return (
@@ -117,7 +256,7 @@ const MemoriesPage: React.FC = () => {
         <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" capture="environment" className="hidden" />
       </div>
 
-      {isLoading && !selectedMemory && <LoadingSpinner message="Creating your memory..." />}
+      {isLoading && memories.length === 0 && <LoadingSpinner message="Loading memories..." />}
       
       {memories.length === 0 && !isLoading && (
         <div className="text-center py-16">
@@ -181,9 +320,9 @@ const MemoriesPage: React.FC = () => {
                         Cancel
                     </button>
                     <button 
-                        onClick={() => {
+                        onClick={async () => {
                           if (navigator.vibrate) navigator.vibrate(10);
-                          memoryToDelete && confirmDeleteMemory(memoryToDelete);
+                          if (memoryToDelete) await confirmDeleteMemory(memoryToDelete);
                         }} 
                         className="px-6 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors font-semibold"
                     >
@@ -192,6 +331,12 @@ const MemoriesPage: React.FC = () => {
                 </div>
             </GlassCard>
         </div>
+      )}
+
+      {isLoading && memories.length > 0 && (
+         <div className="fixed bottom-24 right-4 z-50">
+            <LoadingSpinner message="Creating..." />
+         </div>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality, GenerateContentResponse, Type } from "@google/genai";
 import { Memory, MoodResponse } from "../types";
 
@@ -55,9 +56,14 @@ export const generateCaptionForImage = async (base64Image: string): Promise<{cap
         model: 'gemini-2.5-pro',
         contents: { parts: [imagePart, textPart] }
     });
-    const [caption, moodStr] = response.text.split('\n');
+    
+    const responseText = response.text ?? '';
+    const parts = responseText.split('\n');
+    const caption = (parts[0] || "A beautiful moment captured.").trim();
+    const moodStr = parts[1] || 'love';
     const mood = (moodStr.trim().toLowerCase() as Memory['mood']) || 'love';
-    return { caption: caption.trim(), mood };
+
+    return { caption, mood };
   } catch (error) {
     console.error("Error generating image caption:", error);
     return { caption: "A beautiful memory we'll always cherish.", mood: 'nostalgia' };
@@ -83,9 +89,12 @@ export const editImage = async (base64Image: string, prompt: string): Promise<st
       },
     });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        return part.inlineData.data;
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData) {
+          return part.inlineData.data;
+        }
       }
     }
     throw new Error("No image data returned from API.");
@@ -109,7 +118,12 @@ export const generateBackgroundImage = async (): Promise<string> => {
                 aspectRatio: '9:16',
             },
         });
-        return response.generatedImages[0].image.imageBytes;
+        const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
+        if (imageBytes) {
+          return imageBytes;
+        }
+        console.warn("Imagen 4.0 did not return an image.");
+        return "";
     } catch (error) {
         console.error("Error generating background image:", error);
         return "";
@@ -120,34 +134,41 @@ export const generateBackgroundImage = async (): Promise<string> => {
 
 export const generateVideoFromImage = async (base64Image: string, prompt: string, aspectRatio: '16:9' | '9:16'): Promise<string> => {
     console.log(`Calling Veo to generate video with prompt: "${prompt}"`);
-    
-    const ai = getAi();
-    let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt || 'Animate this image with subtle, beautiful motion. Make it feel alive and romantic.',
-        image: { imageBytes: base64Image, mimeType: 'image/jpeg' },
-        config: {
-            numberOfVideos: 1,
-            resolution: '720p',
-            aspectRatio: aspectRatio,
+    try {
+        const ai = getAi();
+        let operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt || 'Animate this image with subtle, beautiful motion. Make it feel alive and romantic.',
+            image: { imageBytes: base64Image, mimeType: 'image/jpeg' },
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: aspectRatio,
+            }
+        });
+
+        console.log("Video generation started, polling for completion...");
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
+            operation = await ai.operations.getVideosOperation({ operation: operation });
+            console.log("Polling... operation status:", operation.done);
         }
-    });
+        console.log("Video generation complete!");
 
-    console.log("Video generation started, polling for completion...");
-    while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
-        operation = await ai.operations.getVideosOperation({ operation: operation });
-        console.log("Polling... operation status:", operation.done);
-    }
-    console.log("Video generation complete!");
-
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (downloadLink) {
-        const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
-        const videoBlob = await videoResponse.blob();
-        return URL.createObjectURL(videoBlob);
-    } else {
-        throw new Error("Video generation failed to return a download link.");
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (downloadLink) {
+            const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+            if (!videoResponse.ok) {
+                throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+            }
+            const videoBlob = await videoResponse.blob();
+            return URL.createObjectURL(videoBlob);
+        } else {
+            throw new Error("Video generation failed to return a download link.");
+        }
+    } catch (error) {
+        console.error("Error generating video from image:", error);
+        throw error;
     }
 };
 
@@ -340,8 +361,9 @@ Output:
             },
         });
         
-        const jsonString = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const moodResponse: MoodResponse = JSON.parse(jsonString);
+        const responseText = response.text ?? '';
+        const jsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const moodResponse: MoodResponse = JSON.parse(jsonString || '{}');
         return moodResponse;
 
     } catch (error) {
