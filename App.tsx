@@ -5,7 +5,7 @@ import MemoriesPage from './pages/MemoriesPage';
 import MapPage from './pages/MapPage';
 import ArchivePage from './pages/ArchivePage';
 import { Page } from './types';
-import { Heart, Image, Map, ShoppingBag } from 'lucide-react';
+import { Heart, Image, Map, HeartPulse } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activePage, setActivePage] = useState<Page>('home');
@@ -46,7 +46,7 @@ const App: React.FC = () => {
     { id: 'home' as Page, icon: Heart, label: 'Home' },
     { id: 'memories' as Page, icon: Image, label: 'Memories' },
     { id: 'map' as Page, icon: Map, label: 'Compass' },
-    { id: 'archive' as Page, icon: ShoppingBag, label: 'Impulse Heart' },
+    { id: 'archive' as Page, icon: HeartPulse, label: 'Impulse Heart' },
   ];
 
   return (
