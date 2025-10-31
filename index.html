@@ -147,6 +147,43 @@
         pointer-events: none;
         z-index: 100;
       }
+
+      /* New Animations for Love Note */
+      @keyframes cta-wobble {
+        0%, 100% { transform: rotate(-1.5deg); }
+        50% { transform: rotate(1.5deg); }
+      }
+      .animate-cta-wobble {
+        animation: cta-wobble 4s ease-in-out infinite;
+      }
+      @keyframes love-note-in {
+        0% { opacity: 0; transform: scale(0.5) translateY(50px); }
+        80% { opacity: 1; transform: scale(1.05) translateY(-10px); }
+        100% { opacity: 1; transform: scale(1) translateY(0); }
+      }
+      .animate-love-note-in {
+        animation: love-note-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+      @keyframes love-note-out {
+        from { opacity: 1; transform: scale(1); }
+        to { opacity: 0; transform: scale(0.8); }
+      }
+      .animate-love-note-out {
+        animation: love-note-out 0.4s ease-out forwards;
+      }
+      @keyframes sparkle-show {
+          0% { transform: scale(0) rotate(0deg); opacity: 0; }
+          50% { opacity: 1; }
+          100% { transform: scale(1.5) rotate(180deg); opacity: 0; }
+      }
+      .sparkle {
+          position: absolute;
+          color: #f472b6; /* pink-400 */
+          animation: sparkle-show 0.8s ease-out forwards;
+          font-size: 1.5rem;
+          pointer-events: none;
+          z-index: 60;
+      }
     </style>
 <script type="importmap">
 {

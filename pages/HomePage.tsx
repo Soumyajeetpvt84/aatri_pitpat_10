@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X } from 'lucide-react';
-import { getRandomAffectionateLine } from '../services/geminiService';
+import { X, Smartphone } from 'lucide-react';
 import { useGestures } from '../hooks/useGestures';
 import { useTilt } from '../hooks/useTilt';
 import GlassCard from '../components/GlassCard';
@@ -8,10 +7,12 @@ import { userImages } from '../data/userImages';
 import { compliments } from '../data/compliments';
 
 const HomePage: React.FC = () => {
-  const [specialMessage, setSpecialMessage] = useState('');
   const [isLongPressing, setIsLongPressing] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const tilt = useTilt(true);
+  
+  const [loveNote, setLoveNote] = useState<{ text: string; key: number } | null>(null);
+  const [isNoteVisible, setIsNoteVisible] = useState(false);
 
   const [complimentForToday, setComplimentForToday] = useState('');
   const [showComplimentPopup, setShowComplimentPopup] = useState(false);
@@ -67,21 +68,56 @@ const HomePage: React.FC = () => {
     }
   }, []);
 
-  const showTempMessage = (msg: string) => {
-      setSpecialMessage(msg);
-      setTimeout(() => setSpecialMessage(''), 4000);
-  }
+  const showLoveNote = useCallback((msg: string) => {
+    setLoveNote({ text: msg, key: Date.now() });
+    setIsNoteVisible(true);
 
-  const handleShake = useCallback(async () => {
-    if (navigator.vibrate) navigator.vibrate(100); // Haptic for gesture
-    const randomLine = await getRandomAffectionateLine();
-    showTempMessage(randomLine);
+    setTimeout(() => {
+        setIsNoteVisible(false);
+    }, 3500);
+
+    setTimeout(() => {
+        setLoveNote(null);
+    }, 4000); // A bit longer than the fade out animation
   }, []);
+
+  const handleShake = useCallback(() => {
+    if (navigator.vibrate) navigator.vibrate(100);
+
+    let data = { usedIndices: [] };
+    try {
+        const storedShakeData = localStorage.getItem('pitpatShakeData');
+        if (storedShakeData) {
+            data = JSON.parse(storedShakeData);
+        }
+    } catch (error) {
+        console.error("Failed to parse pitpatShakeData from localStorage", error);
+        localStorage.removeItem('pitpatShakeData');
+    }
+
+    let usedIndices: number[] = data.usedIndices || [];
+    if (usedIndices.length >= compliments.length) {
+        usedIndices = []; // Reset if all have been used
+    }
+    
+    let randomIndex;
+    do {
+        randomIndex = Math.floor(Math.random() * compliments.length);
+    } while (usedIndices.includes(randomIndex));
+
+    const newCompliment = compliments[randomIndex];
+    usedIndices.push(randomIndex);
+    
+    const newData = { usedIndices: usedIndices };
+    localStorage.setItem('pitpatShakeData', JSON.stringify(newData));
+
+    showLoveNote(newCompliment);
+  }, [showLoveNote]);
   
   const handleTapThrice = useCallback(() => {
       if (navigator.vibrate) navigator.vibrate([20, 40, 20]); // Haptic for gesture
-      showTempMessage("I love you infinity ♾️");
-  }, []);
+      showLoveNote("I love you infinity ♾️");
+  }, [showLoveNote]);
 
   const handleLongPress = useCallback(() => {
       setIsLongPressing(true);
@@ -130,7 +166,12 @@ const HomePage: React.FC = () => {
             </div>
         </div>
         
-        <p className="mt-8 text-lg text-fuchsia-800/90 font-nunito animate-pulse">Shake for a message 💌</p>
+        <GlassCard className="mt-8 p-3 w-fit mx-auto animate-cta-wobble shadow-pink-500/20">
+            <div className="flex items-center gap-3 text-fuchsia-800/90 font-nunito">
+                <Smartphone size={20} />
+                <span>Shake for a love note</span>
+            </div>
+        </GlassCard>
 
         <button 
           onClick={() => {
@@ -143,12 +184,18 @@ const HomePage: React.FC = () => {
         </button>
       </div>
 
-      {/* Special Message Toast */}
-      {specialMessage && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-full px-4 flex justify-center pointer-events-none">
-            <GlassCard className="p-4 w-full max-w-md animate-pookie-in shadow-2xl shadow-pink-500/30">
-                <p className="text-center font-nunito text-fuchsia-800 italic">"{specialMessage}"</p>
-            </GlassCard>
+      {/* Love Note Popup */}
+      {loveNote && (
+        <div key={loveNote.key} className="fixed inset-0 z-50 flex items-center justify-center p-8 pointer-events-none">
+            <div className={`relative ${isNoteVisible ? 'animate-love-note-in' : 'animate-love-note-out'}`}>
+                <GlassCard className="p-8 max-w-md shadow-2xl shadow-pink-500/40">
+                    <p className="text-2xl text-center font-nunito text-fuchsia-800 italic">"{loveNote.text}"</p>
+                </GlassCard>
+                <div className="sparkle" style={{ top: '-10%', left: '10%' }}>✨</div>
+                <div className="sparkle" style={{ top: '20%', right: '-15%', animationDelay: '0.1s' }}>💖</div>
+                <div className="sparkle" style={{ bottom: '0%', left: '-10%', animationDelay: '0.2s' }}>🌸</div>
+                <div className="sparkle" style={{ bottom: '-15%', right: '5%', animationDelay: '0.3s' }}>⭐</div>
+            </div>
         </div>
       )}
 
