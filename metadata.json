@@ -1,0 +1,9 @@
+{
+  "name": "PitPat - Your Heart in an App",
+  "description": "PitPat is a romantic, emotional, AI-powered progressive web app built for couples. It celebrates love through stored memories, daily affectionate lines, and subtle animations that react to touch, motion, and mood, creating an immersive experience that feels like a native mobile app.",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone",
+    "camera"
+  ]
+}
