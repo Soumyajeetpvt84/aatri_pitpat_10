@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
-import { getDailyLoveLine, getRandomAffectionateLine } from '../services/geminiService';
+import { getRandomAffectionateLine } from '../services/geminiService';
 import { useGestures } from '../hooks/useGestures';
 import { useTilt } from '../hooks/useTilt';
 import GlassCard from '../components/GlassCard';
@@ -8,7 +8,6 @@ import { userImages } from '../data/userImages';
 import { compliments } from '../data/compliments';
 
 const HomePage: React.FC = () => {
-  const [dailyLine, setDailyLine] = useState("Loading your daily love line...");
   const [specialMessage, setSpecialMessage] = useState('');
   const [isLongPressing, setIsLongPressing] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -23,31 +22,6 @@ const HomePage: React.FC = () => {
       setCurrentImageIndex(prevIndex => (prevIndex + 1) % userImages.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
-
-  // Effect for Gemini Daily Love Line
-  useEffect(() => {
-    const fetchDailyLine = async () => {
-      const today = new Date().toDateString();
-      try {
-        const cached = localStorage.getItem('dailyLoveLine');
-        if (cached) {
-          const { date, line } = JSON.parse(cached);
-          if (date === today && line) {
-            setDailyLine(line);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Failed to parse dailyLoveLine from localStorage", error);
-        localStorage.removeItem('dailyLoveLine');
-      }
-      
-      const newLine = await getDailyLoveLine();
-      setDailyLine(newLine);
-      localStorage.setItem('dailyLoveLine', JSON.stringify({ date: today, line: newLine }));
-    };
-    fetchDailyLine();
   }, []);
   
   // Effect for Daily Compliment
@@ -95,7 +69,7 @@ const HomePage: React.FC = () => {
 
   const showTempMessage = (msg: string) => {
       setSpecialMessage(msg);
-      setTimeout(() => setSpecialMessage(''), 3000);
+      setTimeout(() => setSpecialMessage(''), 4000);
   }
 
   const handleShake = useCallback(async () => {
@@ -138,9 +112,9 @@ const HomePage: React.FC = () => {
 
       {/* Particles */}
       <div className="absolute inset-0 overflow-hidden z-10 pointer-events-none">
-        {Array.from({ length: 15 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="particle text-pink-300" 
-            style={{ left: `${Math.random() * 100}%`, animationDuration: `${Math.random() * 15 + 10}s`, animationDelay: `${Math.random() * 10}s` }}>♥</div>
+            style={{ left: `${Math.random() * 100}%`, animationDuration: `${Math.random() * 20 + 20}s`, animationDelay: `${Math.random() * 10}s` }}>♥</div>
         ))}
       </div>
 
@@ -155,21 +129,28 @@ const HomePage: React.FC = () => {
                 />
             </div>
         </div>
-
-        <GlassCard className="mt-8 p-6 w-full max-w-md mx-auto">
-          <p className="text-lg md:text-xl font-nunito text-fuchsia-800 italic">{specialMessage || dailyLine}</p>
-        </GlassCard>
+        
+        <p className="mt-8 text-lg text-fuchsia-800/90 font-nunito animate-pulse">Shake for a message 💌</p>
 
         <button 
           onClick={() => {
             if (navigator.vibrate) navigator.vibrate(10);
             setShowComplimentPopup(true);
           }}
-          className="mt-6 px-6 py-3 bg-white/50 backdrop-blur-lg border border-white/60 rounded-full shadow-lg text-pink-600 font-semibold font-nunito transition-all duration-300 hover:scale-105 hover:shadow-pink-500/30 active:scale-95 animate-pulse"
+          className="mt-6 px-6 py-3 bg-white/50 backdrop-blur-lg border border-white/60 rounded-full shadow-lg text-pink-600 font-semibold font-nunito transition-all duration-300 hover:scale-105 hover:shadow-pink-500/30 active:scale-95"
         >
           Just for you 💌
         </button>
       </div>
+
+      {/* Special Message Toast */}
+      {specialMessage && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-full px-4 flex justify-center pointer-events-none">
+            <GlassCard className="p-4 w-full max-w-md animate-pookie-in shadow-2xl shadow-pink-500/30">
+                <p className="text-center font-nunito text-fuchsia-800 italic">"{specialMessage}"</p>
+            </GlassCard>
+        </div>
+      )}
 
       {/* Compliment Popup */}
       {showComplimentPopup && (
